@@ -81,36 +81,58 @@ class resnetregressor(pl.LightningModule):
         ]
 
         loss = sum(losses)
+        thissize = output.shape[0]
+        # 计算误差统计
+        errors = [loss.item() for loss in losses]
 
+    # 统计不同误差范围内的样本数量
+        num_samples = len(errors)
+        error_100 = sum(1 for error in errors if error <= 100)
+        error_500 = sum(1 for error in errors if 100 < error <= 500)
+        error_1000 = sum(1 for error in errors if 500 < error <= 1000)
+        error_2000 = sum(1 for error in errors if 1000 < error <= 2000)
+
+    # 输出统计信息
+        self.log("NumSamples", num_samples)
+        self.log("Error100", error_100)
+        self.log("Error500", error_500)
+        self.log("Error1000", error_1000)
+        self.log("Error2000", error_2000)
        
-        # log GCD error@km threshold
-        distances_dict = {}
-
      
        
 
         output = {
             "loss_val/total": loss,
-            **individual_accuracy_dict,
-            **individual_loss_dict,
-            **distances_dict,
+            "size" : thissize,
+            "Error100" : error_100
+            "Error500" : error_500
+            "Error1000" : error_1000
+            "Error2000" : error_2000
         }
         return output
 
     def validation_epoch_end(self, outputs):
-        pnames = [p.shortname for p in self.partitionings]
+        avg_loss = torch.stack([x["loss_val/total"] for x in outputs]).mean()
+    
+        total_samples = sum(x["size"] for x in outputs)
+        total_error_100 = sum(x["Error100"] for x in outputs)
+        total_error_500 = sum(x["Error500"] for x in outputs)
+        total_error_1000 = sum(x["Error1000"] for x in outputs)
+        total_error_2000 = sum(x["Error2000"] for x in outputs)
+    
+        error_100_ratio = total_error_100 / total_samples
+        error_500_ratio = total_error_500 / total_samples
+        error_1000_ratio = total_error_1000 / total_samples
+        error_2000_ratio = total_error_2000 / total_samples
+    
+        self.log("avg_val_loss", avg_loss)
+        self.log("error_100_ratio", error_100_ratio)
+        self.log("error_500_ratio", error_500_ratio)
+        self.log("error_1000_ratio", error_1000_ratio)
+        self.log("error_2000_ratio", error_2000_ratio)
 
-        
-        # GCD stats per partitioning
-        gcd_dict = utils_global.summarize_gcd_stats(pnames, outputs, self.hierarchy)
 
-        metrics = {
-            "val_loss": loss_acc_dict["loss_val/total"],
-            **loss_acc_dict,
-            **gcd_dict,
-        }
-        for metric_name, metric_value in metrics.items():
-            self.log(metric_name, metric_value, logger=True)
 
     def _multi_crop_inference(self, batch):
         images, meta_batch = batch
