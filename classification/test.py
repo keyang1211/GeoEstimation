@@ -6,7 +6,7 @@ import torch
 import pytorch_lightning as pl
 import pandas as pd
 
-from classification.train_base import resnetClassifier
+from classification.train_base import resnetregressor
 from classification.dataset import FiveCropImageDataset
 
 
@@ -65,7 +65,7 @@ def parse_args():
 
 args = parse_args()
 print("Load model from checkpoint", args.checkpoint)
-model = MultiPartitioningClassifier.load_from_checkpoint(
+model = resnetregressor.load_from_checkpoint(
     checkpoint_path=str(args.checkpoint),
     hparams_file=str(args.hparams),
     map_location=None,
