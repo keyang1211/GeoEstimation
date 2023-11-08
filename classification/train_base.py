@@ -11,54 +11,38 @@ import pytorch_lightning as pl
 import pandas as pd
 
 from classification import utils_global
-from classification.s2_utils import Partitioning, Hierarchy
 from classification.dataset import MsgPackIterableDatasetMultiTargetWithDynLabels
 
 
-class MultiPartitioningClassifier(pl.LightningModule):
+class resnetregressor(pl.LightningModule):
     def __init__(self, hparams: Namespace):
         super().__init__()
         self.hparams = hparams
+        self.model, self.regressor = self.__build_model()
 
-        self.partitionings, self.hierarchy = self.__init_partitionings()
-        self.model, self.classifier = self.__build_model()
-
-    def __init_partitionings(self):
-
-        partitionings = []
-        for shortname, path in zip(
-            self.hparams.partitionings["shortnames"],
-            self.hparams.partitionings["files"],
-        ):
-            partitionings.append(Partitioning(Path(path), shortname, skiprows=2))
-
-        if len(self.hparams.partitionings["files"]) == 1:
-            return partitionings, None
-
-        return partitionings, Hierarchy(partitionings)
+ 
 
     def __build_model(self):
         logging.info("Build model")
         model, nfeatures = utils_global.build_base_model(self.hparams.arch)
 
-        classifier = torch.nn.ModuleList(
-            [
-                torch.nn.Linear(nfeatures, len(self.partitionings[i]))
-                for i in range(len(self.partitionings))
-            ]
+        regressor = torch.nn.Sequential(
+            torch.nn.Linear(nfeatures, 64),  # 64是你选择的隐藏层大小
+            torch.nn.ReLU(),
+            torch.nn.Linear(64, 2)  # 输出两个数字
         )
 
         if self.hparams.weights:
             logging.info("Load weights from pre-trained model")
             model, classifier = utils_global.load_weights_if_available(
-                model, classifier, self.hparams.weights
+                model, regressor, self.hparams.weights
             )
 
-        return model, classifier
+        return model, regressor
 
     def forward(self, x):
         fv = self.model(x)
-        yhats = [self.classifier[i](fv) for i in range(len(self.partitionings))]
+        yhats = self.regressor(fv)
         return yhats
 
     def training_step(self, batch, batch_idx, optimizer_idx=None):
@@ -68,28 +52,21 @@ class MultiPartitioningClassifier(pl.LightningModule):
             target = [target]
 
         # forward pass
-        output = self(images)
+        output = self(images)  #形状为 (batch_size, 2) 
 
         # individual losses per partitioning
         losses = [
-            torch.nn.functional.cross_entropy(output[i], target[i])
-            for i in range(len(output))
+            utils_global.vectorized_gc_distance(output[i][0],output[i][1], target[i][0],target[i][1])
+            for i in range(output.shape[0])
         ]
 
         loss = sum(losses)
 
-        # stats
-        losses_stats = {
-            f"loss_train/{p}": l
-            for (p, l) in zip([p.shortname for p in self.partitionings], losses)
-        }
-        for metric_name, metric_value in losses_stats.items():
-            self.log(metric_name, metric_value, prog_bar=True, logger=True)
         self.log("train_loss", loss, prog_bar=True, logger=True)
-        return {"loss": loss, **losses_stats}
+        return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
-        images, target, true_lats, true_lngs = batch
+        images, target = batch
 
         if not isinstance(target, list) and len(target.shape) == 1:
             target = [target]
@@ -99,57 +76,18 @@ class MultiPartitioningClassifier(pl.LightningModule):
 
         # loss calculation
         losses = [
-            torch.nn.functional.cross_entropy(output[i], target[i])
-            for i in range(len(output))
+            utils_global.vectorized_gc_distance(output[i][0],output[i][1], target[i][0],target[i][1])
+            for i in range(output.shape[0])
         ]
 
         loss = sum(losses)
 
-        # log top-k accuracy for each partitioning
-        individual_accuracy_dict = utils_global.accuracy(
-            output, target, [p.shortname for p in self.partitionings]
-        )
-        # log loss for each partitioning
-        individual_loss_dict = {
-            f"loss_val/{p}": l
-            for (p, l) in zip([p.shortname for p in self.partitionings], losses)
-        }
-
+       
         # log GCD error@km threshold
         distances_dict = {}
 
-        if self.hierarchy is not None:
-            hierarchy_logits = [
-                yhat[:, self.hierarchy.M[:, i]] for i, yhat in enumerate(output)
-            ]
-            hierarchy_logits = torch.stack(hierarchy_logits, dim=-1,)
-            hierarchy_preds = torch.prod(hierarchy_logits, dim=-1)
-
-        pnames = [p.shortname for p in self.partitionings]
-        if self.hierarchy is not None:
-            pnames.append("hierarchy")
-        for i, pname in enumerate(pnames):
-            # get predicted coordinates
-            if i == len(self.partitionings):
-                i = i - 1
-                pred_class_indexes = torch.argmax(hierarchy_preds, dim=1)
-            else:
-                pred_class_indexes = torch.argmax(output[i], dim=1)
-            pred_latlngs = [
-                self.partitionings[i].get_lat_lng(idx)
-                for idx in pred_class_indexes.tolist()
-            ]
-            pred_lats, pred_lngs = map(list, zip(*pred_latlngs))
-            pred_lats = torch.tensor(pred_lats, dtype=torch.float)
-            pred_lngs = torch.tensor(pred_lngs, dtype=torch.float)
-            # calculate error
-            distances = utils_global.vectorized_gc_distance(
-                pred_lats,
-                pred_lngs,
-                true_lats.type_as(pred_lats),
-                true_lngs.type_as(pred_lats),
-            )
-            distances_dict[f"gcd_{pname}_val"] = distances
+     
+       
 
         output = {
             "loss_val/total": loss,
@@ -162,9 +100,7 @@ class MultiPartitioningClassifier(pl.LightningModule):
     def validation_epoch_end(self, outputs):
         pnames = [p.shortname for p in self.partitionings]
 
-        # top-k accuracy and loss per partitioning
-        loss_acc_dict = utils_global.summarize_loss_acc_stats(pnames, outputs)
-
+        
         # GCD stats per partitioning
         gcd_dict = utils_global.summarize_gcd_stats(pnames, outputs, self.hierarchy)
 
@@ -315,7 +251,7 @@ class MultiPartitioningClassifier(pl.LightningModule):
 
     def train_dataloader(self):
 
-        with open(self.hparams.train_label_mapping, "r") as f:
+        with open(self.hparams.after_train_label_mapping, "r") as f:
             target_mapping = json.load(f)
 
         tfm = torchvision.transforms.Compose(
@@ -348,7 +284,7 @@ class MultiPartitioningClassifier(pl.LightningModule):
 
     def val_dataloader(self):
 
-        with open(self.hparams.val_label_mapping, "r") as f:
+        with open(self.after_hparams.val_label_mapping, "r") as f:
             target_mapping = json.load(f)
 
         tfm = torchvision.transforms.Compose(
@@ -368,7 +304,6 @@ class MultiPartitioningClassifier(pl.LightningModule):
             key_img_encoded=self.hparams.key_img_encoded,
             shuffle=False,
             transformation=tfm,
-            meta_path=self.hparams.val_meta_path,
             cache_size=1024,
         )
 
@@ -406,7 +341,7 @@ def main():
     logging.info(f"Output directory: {out_dir}")
 
     # init classifier
-    model = MultiPartitioningClassifier(hparams=Namespace(**model_params))
+    model = resnetregressor(hparams=Namespace(**model_params))
 
     logger = pl.loggers.TensorBoardLogger(save_dir=str(out_dir), name="tb_logs")
     checkpoint_dir = out_dir / "ckpts" / "{epoch:03d}-{val_loss:.4f}"

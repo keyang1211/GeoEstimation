@@ -6,7 +6,7 @@ import torch
 import pytorch_lightning as pl
 import pandas as pd
 
-from classification.train_base import MultiPartitioningClassifier
+from classification.train_base import resnetClassifier
 from classification.dataset import FiveCropImageDataset
 
 
