@@ -23,15 +23,17 @@ model_params:
       - resources/s2_cells/cells_50_2000.csv
       - resources/s2_cells/cells_50_1000.csv
   # images stored in chunks
-  msgpack_train_dir: /work3/s212495/resources/images/mp16/part0_9
+  msgpack_train_dir: /work3/s212495/resources/images/mp16
   msgpack_val_dir: /work3/s212495/resources/images/yfcc25600
   # meta information i.e. coordinates for each image
   train_meta_path: resources/mp16_places365.csv
   val_meta_path: resources/yfcc25600_places365.csv 
   # mapping from image ids in msgpack dataset to target value(s)
   # orient: index -> {"img_id": [t1, t2], ...}
-  train_label_mapping: resources/mp16_places365_mapping_h3_09.json
+  train_label_mapping: resources/mp16_places365_mapping_h3.json
   val_label_mapping: resources/yfcc_25600_places365_mapping_h3.json
+  after_train_label_mapping: resources/after_mp16_places365_mapping_h3.json
+  after_val_label_mapping: resources/after_yfcc_25600_places365_mapping_h3.json
   key_img_id: id # image id name for msgpack dataset
   key_img_encoded: image # image data name for msgpack dataset
   num_workers_per_loader: 6

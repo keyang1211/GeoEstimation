@@ -192,7 +192,7 @@ def main():
                 filtered_mapping[meta["img_id"]] = mapping[meta["img_id"]]
         logging.info(f"True dataset size: {len(filtered_mapping)}")
 
-        with open(config[f"{dataset_type}_label_mapping"], "w") as fw:
+        with open(config[f"after_{dataset_type}_label_mapping"], "w") as fw:
             json.dump(filtered_mapping, fw)
     return
 

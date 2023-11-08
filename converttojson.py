@@ -22,6 +22,18 @@ def parse_args():
 
 def main():
     
+    for dataset_type in ["train", "val"]:
+        datapath = config[f"{dataset_type}_meta_path"]
+        df = pd.read_csv(datapath)
+        
+        result_dict = dict()
+        for _, row in df.iterrows():
+            img_id = row["IMG_ID"]
+            lat_lon = [row["LAT"], row["LON"]]
+            result_dict[img_id] = lat_lon
+        with open(config[f"{dataset_type}_label_mapping"], "w") as json_file:
+            json.dump(result_dict, json_file)
+    return
 
 if __name__ == "__main__":
 

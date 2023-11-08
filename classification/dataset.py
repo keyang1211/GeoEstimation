@@ -23,16 +23,13 @@ class MsgPackIterableDatasetMultiTargetWithDynLabels(torch.utils.data.IterableDa
 
     def __init__(
         self,
-        path: str,
-        target_mapping: Dict[str, int],
+        path: str, #msgpack
+        target_mapping: Dict[str, list], #afterjson文件，key是imgid，value是lat lon的列表
         key_img_id: str = "id",
         key_img_encoded: str = "image",
         transformation=None,
         shuffle=True,
-        meta_path=None,
         cache_size=6 * 4096,
-        lat_key="LAT",
-        lon_key="LON",
     ):
 
         super(MsgPackIterableDatasetMultiTargetWithDynLabels, self).__init__()
@@ -54,12 +51,7 @@ class MsgPackIterableDatasetMultiTargetWithDynLabels(torch.utils.data.IterableDa
         if not isinstance(self.path, (list, set)):
             self.path = [self.path]
 
-        self.meta_path = meta_path
-        if meta_path is not None:
-            self.meta = pd.read_csv(meta_path, index_col=0)
-            self.meta = self.meta.astype({lat_key: "float32", lon_key: "float32"})
-            self.lat_key = lat_key
-            self.lon_key = lon_key
+    
 
         self.shards = self.__init_shards(self.path)
         self.length = len(self.target_mapping)
@@ -104,13 +96,9 @@ class MsgPackIterableDatasetMultiTargetWithDynLabels(torch.utils.data.IterableDa
         if self.transformation is not None:
             img = self.transformation(img)
 
-        if self.meta_path is None:
-            return img, x["target"]
-        else:
-            _id = x[self.key_img_id].decode("utf-8")
-            meta = self.meta.loc[_id]
-            return img, x["target"], meta[self.lat_key], meta[self.lon_key]
-
+        
+        return img, x["target"] #返回图片张量和经纬度的列表。。。。。。。也就是可迭代数据集迭代输出的每一项都是这样！！！！！
+        
     def __iter__(self):
 
         shard_indices = list(range(len(self.shards)))
@@ -156,10 +144,8 @@ class MsgPackIterableDatasetMultiTargetWithDynLabels(torch.utils.data.IterableDa
                     _id = x[self.key_img_id].decode("utf-8")
                     try:
                         # set target value dynamically
-                        if len(self.target_mapping[_id]) == 1:
-                            x["target"] = self.target_mapping[_id][0]
-                        else:
-                            x["target"] = self.target_mapping[_id]
+                        
+                        x["target"] = self.target_mapping[_id] # 是个列表，包含经纬度
                     except KeyError:
                         # reject sample
                         # print(f'reject {_id} {type(_id)}')
