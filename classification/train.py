@@ -417,7 +417,8 @@ def main():
     model = resnetregressor(modelparams=Namespace(**model_params))
 
     checkpoint_dir = out_dir / "ckpts" 
-    checkpointer = pl.callbacks.ModelCheckpoint(dirpath=checkpoint_dir,filename='{epoch}-{val_loss:.2f}')
+    checkpointer = pl.callbacks.ModelCheckpoint(dirpath=checkpoint_dir,filename='{epoch}-{val_loss:.2f}',save_top_k = 5, monitor = 
+                                                'val_loss', mode = 'min')
 
     progress_bar_refresh_rate = False
     if args.progbar:
