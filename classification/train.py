@@ -384,7 +384,7 @@ def main():
 
     trainer = pl.Trainer(
         **trainer_params,
-        devices="auto"
+        devices="auto",
         val_check_interval=model_params["val_check_interval"],
         callbacks=[checkpointer],
         enable_progress_bar=progress_bar_refresh_rate,
