@@ -64,8 +64,8 @@ def load_weights_if_available(
 
 
 def vectorized_gc_distance(latitudes, longitudes, latitudes_gt, longitudes_gt):
-    latitudes = latitudes * 180.0 - 90.0
-    longitudes = longitudes * 360.0 - 180.0   #将0-1之间的值映射到经纬度
+#     latitudes = latitudes * 180.0 - 90.0
+#     longitudes = longitudes * 360.0 - 180.0   #将0-1之间的值映射到经纬度
     
     
     

@@ -31,7 +31,7 @@ class resnetregressor(pl.LightningModule):
             torch.nn.Linear(nfeatures, 64),  # 64是你选择的隐藏层大小
             torch.nn.ReLU(),
             torch.nn.Linear(64, 2),
-            torch.nn.Sigmoid()# 输出两个数字（0-1）
+            torch.nn.Tanh()# 输出两个数字（-1 - 1）
         )
 
         if self.hparams.modelparams.weights:
@@ -63,23 +63,24 @@ class resnetregressor(pl.LightningModule):
         output = self(images)  #形状为 (batch_size, 2) 
         
         
-        #测试
-        output_0 = output[:, 0] * 180.0 - 90.0
-        output_1 = output[:, 1] * 360.0 - 180.0
+       # 缩放和映射
+        output_scaled = torch.stack([
+            output[:, 0] * 90.0,   # 映射到 -90 到 +90 范围
+            output[:, 1] * 180.0   # 映射到 -180 到 +180 范围
+        ], dim=1)
 
-        output_mapped = torch.stack([output_0, output_1], dim=1)
 
         
         print("----------------------output shape---------------------")
-        print(output_mapped.shape)
-        print(output_mapped)
+        print(output_scaled.shape)
+        print(output_scaled)
         print("------------------------------------------------------")
         print("----------------------target shape---------------------")
         print(target)
         print("------------------------------------------------------")
         # individual losses per partitioning
         losses = [
-            utils_global.vectorized_gc_distance(output[i][0],output[i][1], target[0][i],target[1][i])
+            utils_global.vectorized_gc_distance(output_scaled[i][0],output_scaled[i][1], target[0][i],target[1][i])
             for i in range(output.shape[0])
         ]
         errors = [loss.item() for loss in losses]
@@ -98,12 +99,16 @@ class resnetregressor(pl.LightningModule):
 
         # forward
         output = self(images)
-       
+        # 缩放和映射
+        output_scaled = torch.stack([
+            output[:, 0] * 90.0,   # 映射到 -90 到 +90 范围
+            output[:, 1] * 180.0   # 映射到 -180 到 +180 范围
+        ], dim=1)
        
 
         # loss calculation
         losses = [
-            utils_global.vectorized_gc_distance(output[i][0],output[i][1], target[0][i],target[1][i])
+            utils_global.vectorized_gc_distance(output_scaled[i][0],output_scaled[i][1], target[0][i],target[1][i])
             for i in range(output.shape[0])
         ]
        
@@ -420,6 +425,7 @@ def main():
         **trainer_params,
         devices="auto",
         val_check_interval=model_params["val_check_interval"],
+        gradient_clip_val=1.0,
         callbacks=[checkpointer],
         enable_progress_bar=progress_bar_refresh_rate,
     )
