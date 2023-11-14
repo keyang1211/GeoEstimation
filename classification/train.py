@@ -19,6 +19,7 @@ class resnetregressor(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.model, self.regressor = self.__build_model()
+        self.validation_step_outputs = []
 
  
 
@@ -51,7 +52,7 @@ class resnetregressor(pl.LightningModule):
         epoch_num = self.current_epoch  # current_epoch是从0开始的，所以加1表示当前epoch数
         logging.info(f"Starting epoch {epoch_num}")
 
-    def training_step(self, batch, batch_idx, optimizer_idx=None):
+    def training_step(self, batch, batch_idx):
         images, target = batch
         
         if not isinstance(target, list) and len(target.shape) == 1:
@@ -69,7 +70,6 @@ class resnetregressor(pl.LightningModule):
         ]
 
         loss = sum(losses)
-
         self.log("train_loss", loss, prog_bar=True, logger=True)
         return {"loss": loss}
 
@@ -91,6 +91,7 @@ class resnetregressor(pl.LightningModule):
         ]
 
         loss = sum(losses)
+
         thissize = output.shape[0]
         # 计算误差统计
         errors = [loss.item() for loss in losses]
@@ -120,16 +121,17 @@ class resnetregressor(pl.LightningModule):
             "Error1000" : error_1000,
             "Error2000" : error_2000
         }
+        self.validation_step_outputs.append(output)
         return output
 
-    def validation_epoch_end(self, outputs):
-        avg_loss = torch.stack([x["loss_val/total"] for x in outputs]).mean()
+    def on_validation_epoch_end(self):
+        avg_loss = torch.stack([x["loss_val/total"] for x in self.validation_step_outputs]).mean()
     
-        total_samples = sum(x["size"] for x in outputs)
-        total_error_100 = sum(x["Error100"] for x in outputs)
-        total_error_500 = sum(x["Error500"] for x in outputs)
-        total_error_1000 = sum(x["Error1000"] for x in outputs)
-        total_error_2000 = sum(x["Error2000"] for x in outputs)
+        total_samples = sum([x["size"] for x in self.validation_step_outputs])
+        total_error_100 = sum([x["Error100"] for x in self.validation_step_outputs])
+        total_error_500 = sum([x["Error500"] for x in self.validation_step_outputs])
+        total_error_1000 = sum([x["Error1000"] for x in self.validation_step_outputs])
+        total_error_2000 = sum([x["Error2000"] for x in self.validation_step_outputs])
     
         error_100_ratio = total_error_100 / total_samples
         error_500_ratio = total_error_500 / total_samples
@@ -141,7 +143,7 @@ class resnetregressor(pl.LightningModule):
         self.log("error_500_ratio", error_500_ratio)
         self.log("error_1000_ratio", error_1000_ratio)
         self.log("error_2000_ratio", error_2000_ratio)
-
+        self.validation_step_outputs.clear()
 
 
     def _multi_crop_inference(self, batch):
@@ -258,7 +260,7 @@ class resnetregressor(pl.LightningModule):
 
         return distances_dict
 
-    def test_epoch_end(self, outputs):
+    def on_test_epoch_end(self, outputs):
         result = utils_global.summarize_test_gcd(
             [p.shortname for p in self.partitionings], outputs, self.hierarchy
         )
@@ -269,17 +271,21 @@ class resnetregressor(pl.LightningModule):
         optim_feature_extrator = torch.optim.SGD(
             self.parameters(), **self.hparams.modelparams.optim["params"]
         )
-
-        return {
-            "optimizer": optim_feature_extrator,
-            "lr_scheduler": {
-                "scheduler": torch.optim.lr_scheduler.MultiStepLR(
-                    optim_feature_extrator, **self.hparams.modelparams.scheduler["params"]
-                ),
-                "interval": "epoch",
-                "name": "lr",
-            },
-        }
+        Ascheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optim_feature_extrator, **self.hparams.modelparams.scheduler["params"]
+        )
+        
+        return [optim_feature_extrator],[Ascheduler]
+        # return {
+        #     "optimizer": optim_feature_extrator,
+        #     "lr_scheduler": {
+        #         "scheduler": torch.optim.lr_scheduler.MultiStepLR(
+        #             optim_feature_extrator, **self.hparams.modelparams.scheduler["params"]
+        #         ),
+        #         "interval": "epoch",
+        #         "name": "lr"
+        #     },
+        # }
 
     def train_dataloader(self):
 
