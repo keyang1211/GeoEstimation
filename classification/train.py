@@ -47,11 +47,8 @@ class resnetregressor(pl.LightningModule):
         yhats = self.regressor(fv)
         return yhats
     
-    
-    def on_epoch_start(self):
-        # 在每个epoch开始时记录日志
-        epoch_num = self.current_epoch  # current_epoch是从0开始的，所以加1表示当前epoch数
-        logging.info(f"Starting epoch {epoch_num}")
+ 
+        
 
     def training_step(self, batch, batch_idx):
         images, target = batch
@@ -71,22 +68,22 @@ class resnetregressor(pl.LightningModule):
 
 
         
-        print("----------------------output shape---------------------")
-        print(output_scaled.shape)
-        print(output_scaled)
-        print("------------------------------------------------------")
-        print("----------------------target shape---------------------")
-        print(target)
-        print("------------------------------------------------------")
+#         print("----------------------output shape---------------------")
+#         print(output_scaled.shape)
+#         print(output_scaled)
+#         print("------------------------------------------------------")
+#         print("----------------------target shape---------------------")
+#         print(target)
+#         print("------------------------------------------------------")
         # individual losses per partitioning
         losses = [
             utils_global.vectorized_gc_distance(output_scaled[i][0],output_scaled[i][1], target[0][i],target[1][i])
             for i in range(output.shape[0])
         ]
         errors = [loss.item() for loss in losses]
-        print("----------------------train loss---------------------")
-        print(errors)
-        print("------------------------------------------------------")
+        # print("----------------------train loss---------------------")
+        # print(errors)
+        # print("------------------------------------------------------")
         loss = sum(losses)
         # self.log("train_loss", loss, prog_bar=True, logger=True)
         return loss
@@ -117,9 +114,9 @@ class resnetregressor(pl.LightningModule):
         thissize = output.shape[0]
         # 计算误差统计
         errors = [loss.item() for loss in losses]
-        # print("------------------------val loss----------------------")
-        # print(errors)
-        # print("------------------------------------------------------")
+        print("------------------------val loss----------------------")
+        print(errors)
+        print("------------------------------------------------------")
     # 统计不同误差范围内的样本数量
         num_samples = len(errors)
         error_100 = sum([1 for error in errors if error <= 100])
@@ -138,13 +135,15 @@ class resnetregressor(pl.LightningModule):
        
 
         output = {
-            "loss": loss,
+            "val_loss": loss,
+            "avg_1loss":loss/thissize, 
             "size" : thissize,
             "ACC100" : error_100,
             "ACC500" : error_500,
             "ACC1000" : error_1000,
             "ACC2000" : error_2000
         }
+        self.log("val_loss", loss)
         # print("-------------valoutput----------")
         # print(output)
         # print("------------------------------------------------------")
@@ -153,7 +152,10 @@ class resnetregressor(pl.LightningModule):
     
     
     def on_validation_epoch_end(self):
-        avg_loss = torch.stack([x["loss"] for x in self.validation_step_outputs]).mean().item()
+        epoch_num = self.current_epoch
+        logging.info(f"Starting epoch {epoch_num}")
+        avg_loss = torch.tensor([x["avg_1loss"].item() for x in self.validation_step_outputs]).mean()
+
     
         total_samples = sum([x["size"] for x in self.validation_step_outputs])
         total_error_100 = sum([x["ACC100"] for x in self.validation_step_outputs])
@@ -166,7 +168,7 @@ class resnetregressor(pl.LightningModule):
         error_1000_ratio = total_error_1000 / total_samples
         error_2000_ratio = total_error_2000 / total_samples
     
-        logging.info("the_val_loss: %s", avg_loss)
+        logging.info("the_val_loss: %s", avg_loss.item())
         logging.info("100_accratio: %s", error_100_ratio)
         logging.info("500_accratio: %s", error_500_ratio)
         logging.info("1000_accratio: %s", error_1000_ratio)
