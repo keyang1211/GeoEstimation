@@ -36,12 +36,10 @@ model_params:
   after_val_label_mapping: resources/after_yfcc_25600_places365_mapping_h3.json
   key_img_id: id # image id name for msgpack dataset
   key_img_encoded: image # image data name for msgpack dataset
-  num_workers_per_loader: 6
+  num_workers_per_loader: 16
 # paramters for pytorch lightning trainer class
 trainer_params:
-  gpus: 4
   max_epochs: 15
-  distributed_backend: null
   precision: 16
-  reload_dataloaders_every_epoch: true # necessary to shuffle IterableDataset
+  reload_dataloaders_every_n_epochs: 1 # necessary to shuffle IterableDataset
 

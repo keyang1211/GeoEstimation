@@ -30,7 +30,8 @@ class resnetregressor(pl.LightningModule):
         regressor = torch.nn.Sequential(
             torch.nn.Linear(nfeatures, 64),  # 64是你选择的隐藏层大小
             torch.nn.ReLU(),
-            torch.nn.Linear(64, 2)  # 输出两个数字
+            torch.nn.Linear(64, 2),
+            torch.nn.Sigmoid()# 输出两个数字（0-1）
         )
 
         if self.hparams.modelparams.weights:
@@ -60,18 +61,29 @@ class resnetregressor(pl.LightningModule):
 
         # forward pass
         output = self(images)  #形状为 (batch_size, 2) 
-        # Add debug prints
-       
-       
+        output[:, 0] = output[:, 0] * 180.0 - 90.0  # 将第一列映射到 -90 到 +90 范围
+        output[:, 1] = output[:, 1] * 360.0 - 180.0  # 将第二列映射到 -180 到 +180 范围
+
+        
+        print("----------------------output shape---------------------")
+        print(output.shape)
+        print(output)
+        print("------------------------------------------------------")
+        print("----------------------target shape---------------------")
+        print(target)
+        print("------------------------------------------------------")
         # individual losses per partitioning
         losses = [
             utils_global.vectorized_gc_distance(output[i][0],output[i][1], target[0][i],target[1][i])
             for i in range(output.shape[0])
         ]
-
+        errors = [loss.item() for loss in losses]
+        print("----------------------train loss---------------------")
+        print(errors)
+        print("------------------------------------------------------")
         loss = sum(losses)
-        self.log("train_loss", loss, prog_bar=True, logger=True)
-        return {"loss": loss}
+        # self.log("train_loss", loss, prog_bar=True, logger=True)
+        return loss
 
     def validation_step(self, batch, batch_idx):
         images, target = batch #iamge是（batch size，2），target是两个张量的列表，一个是lat，一个是lon
@@ -89,60 +101,71 @@ class resnetregressor(pl.LightningModule):
             utils_global.vectorized_gc_distance(output[i][0],output[i][1], target[0][i],target[1][i])
             for i in range(output.shape[0])
         ]
-
+       
         loss = sum(losses)
 
         thissize = output.shape[0]
         # 计算误差统计
         errors = [loss.item() for loss in losses]
-
+        # print("------------------------val loss----------------------")
+        # print(errors)
+        # print("------------------------------------------------------")
     # 统计不同误差范围内的样本数量
         num_samples = len(errors)
-        error_100 = sum(1 for error in errors if error <= 100)
-        error_500 = sum(1 for error in errors if 100 < error <= 500)
-        error_1000 = sum(1 for error in errors if 500 < error <= 1000)
-        error_2000 = sum(1 for error in errors if 1000 < error <= 2000)
+        error_100 = sum([1 for error in errors if error <= 100])
+        error_500 = sum([1 for error in errors if  error <= 500])
+        error_1000 = sum([1 for error in errors if  error <= 1000])
+        error_2000 = sum([1 for error in errors if  error <= 2000])
 
     # 输出统计信息
-        self.log("NumSamples", num_samples)
-        self.log("Error100", error_100)
-        self.log("Error500", error_500)
-        self.log("Error1000", error_1000)
-        self.log("Error2000", error_2000)
+#         logging.info("NumSamples", num_samples)
+#         logging.info("Error100", error_100)
+#         logging.info("Error500", error_500)
+#         logging.info("Error1000", error_1000)
+#         logging.info("Error2000", error_2000)
        
      
        
 
         output = {
-            "loss_val/total": loss,
+            "loss": loss,
             "size" : thissize,
-            "Error100" : error_100,
-            "Error500" : error_500,
-            "Error1000" : error_1000,
-            "Error2000" : error_2000
+            "ACC100" : error_100,
+            "ACC500" : error_500,
+            "ACC1000" : error_1000,
+            "ACC2000" : error_2000
         }
+        # print("-------------valoutput----------")
+        # print(output)
+        # print("------------------------------------------------------")
         self.validation_step_outputs.append(output)
         return output
-
+    
+    
     def on_validation_epoch_end(self):
-        avg_loss = torch.stack([x["loss_val/total"] for x in self.validation_step_outputs]).mean()
+        avg_loss = torch.stack([x["loss"] for x in self.validation_step_outputs]).mean().item()
     
         total_samples = sum([x["size"] for x in self.validation_step_outputs])
-        total_error_100 = sum([x["Error100"] for x in self.validation_step_outputs])
-        total_error_500 = sum([x["Error500"] for x in self.validation_step_outputs])
-        total_error_1000 = sum([x["Error1000"] for x in self.validation_step_outputs])
-        total_error_2000 = sum([x["Error2000"] for x in self.validation_step_outputs])
+        total_error_100 = sum([x["ACC100"] for x in self.validation_step_outputs])
+        total_error_500 = sum([x["ACC500"] for x in self.validation_step_outputs])
+        total_error_1000 = sum([x["ACC1000"] for x in self.validation_step_outputs])
+        total_error_2000 = sum([x["ACC2000"] for x in self.validation_step_outputs])
     
         error_100_ratio = total_error_100 / total_samples
         error_500_ratio = total_error_500 / total_samples
         error_1000_ratio = total_error_1000 / total_samples
         error_2000_ratio = total_error_2000 / total_samples
     
-        self.log("val_loss", avg_loss)
-        self.log("error_100_ratio", error_100_ratio)
-        self.log("error_500_ratio", error_500_ratio)
-        self.log("error_1000_ratio", error_1000_ratio)
-        self.log("error_2000_ratio", error_2000_ratio)
+        logging.info("the_val_loss: %s", avg_loss)
+        logging.info("100_accratio: %s", error_100_ratio)
+        logging.info("500_accratio: %s", error_500_ratio)
+        logging.info("1000_accratio: %s", error_1000_ratio)
+        logging.info("2000_accratio: %s", error_2000_ratio)
+        self.log("the_val_loss", avg_loss)
+        self.log("100_accratio", error_100_ratio)
+        self.log("500_accratio", error_500_ratio)
+        self.log("1000_accratio", error_1000_ratio)
+        self.log("2000_accratio", error_2000_ratio)
         self.validation_step_outputs.clear()
 
 
@@ -364,7 +387,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    logging.basicConfig(level=logging.INFO, filename="train.log")
+    logging.basicConfig(level=logging.INFO, filename="trainres.log")
 
     with open(args.config) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -381,8 +404,8 @@ def main():
     # init 
     model = resnetregressor(modelparams=Namespace(**model_params))
 
-    checkpoint_dir = out_dir / "ckpts" / "{epoch:03d}-{val_loss:.4f}"
-    checkpointer = pl.callbacks.ModelCheckpoint(checkpoint_dir)
+    checkpoint_dir = out_dir / "ckpts" 
+    checkpointer = pl.callbacks.ModelCheckpoint(dirpath=checkpoint_dir,filename='{epoch}-{val_loss:.2f}')
 
     progress_bar_refresh_rate = False
     if args.progbar:
