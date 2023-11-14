@@ -61,13 +61,18 @@ class resnetregressor(pl.LightningModule):
 
         # forward pass
         output = self(images)  #形状为 (batch_size, 2) 
-        output[:, 0] = output[:, 0] * 180.0 - 90.0  # 将第一列映射到 -90 到 +90 范围
-        output[:, 1] = output[:, 1] * 360.0 - 180.0  # 将第二列映射到 -180 到 +180 范围
+        
+        
+        #测试
+        output_0 = output[:, 0] * 180.0 - 90.0
+        output_1 = output[:, 1] * 360.0 - 180.0
+
+        output_mapped = torch.stack([output_0, output_1], dim=1)
 
         
         print("----------------------output shape---------------------")
-        print(output.shape)
-        print(output)
+        print(output_mapped.shape)
+        print(output_mapped)
         print("------------------------------------------------------")
         print("----------------------target shape---------------------")
         print(target)
