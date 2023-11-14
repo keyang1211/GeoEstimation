@@ -15,7 +15,7 @@ from classification.dataset import MsgPackIterableDatasetMultiTargetWithDynLabel
 
 
 class resnetregressor(pl.LightningModule):
-    def __init__(self, hparams: Namespace):
+    def __init__(self, modelparams: Namespace):
         super().__init__()
         self.save_hyperparameters()
         self.model, self.regressor = self.__build_model()
@@ -24,7 +24,7 @@ class resnetregressor(pl.LightningModule):
 
     def __build_model(self):
         logging.info("Build model")
-        model, nfeatures = utils_global.build_base_model(self.hparams.arch)
+        model, nfeatures = utils_global.build_base_model(self.hparams.modelparams.arch)
 
         regressor = torch.nn.Sequential(
             torch.nn.Linear(nfeatures, 64),  # 64是你选择的隐藏层大小
@@ -32,10 +32,10 @@ class resnetregressor(pl.LightningModule):
             torch.nn.Linear(64, 2)  # 输出两个数字
         )
 
-        if self.hparams.weights:
+        if self.hparams.modelparams.weights:
             logging.info("Load weights from pre-trained model")
             model, regressor = utils_global.load_weights_if_available(
-                model, regressor, self.hparams.weights
+                model, regressor, self.hparams.modelparams.weights
             )
 
         return model, regressor
@@ -267,14 +267,14 @@ class resnetregressor(pl.LightningModule):
     def configure_optimizers(self):
 
         optim_feature_extrator = torch.optim.SGD(
-            self.parameters(), **self.hparams.optim["params"]
+            self.parameters(), **self.hparams.modelparams.optim["params"]
         )
 
         return {
             "optimizer": optim_feature_extrator,
             "lr_scheduler": {
                 "scheduler": torch.optim.lr_scheduler.MultiStepLR(
-                    optim_feature_extrator, **self.hparams.scheduler["params"]
+                    optim_feature_extrator, **self.hparams.modelparams.scheduler["params"]
                 ),
                 "interval": "epoch",
                 "name": "lr",
@@ -283,7 +283,7 @@ class resnetregressor(pl.LightningModule):
 
     def train_dataloader(self):
 
-        with open(self.hparams.after_train_label_mapping, "r") as f:
+        with open(self.hparams.modelparams.after_train_label_mapping, "r") as f:
             target_mapping = json.load(f)
 
         tfm = torchvision.transforms.Compose(
@@ -298,25 +298,25 @@ class resnetregressor(pl.LightningModule):
         )
 
         dataset = MsgPackIterableDatasetMultiTargetWithDynLabels(
-            path=self.hparams.msgpack_train_dir,
+            path=self.hparams.modelparams.msgpack_train_dir,
             target_mapping=target_mapping,
-            key_img_id=self.hparams.key_img_id,
-            key_img_encoded=self.hparams.key_img_encoded,
+            key_img_id=self.hparams.modelparams.key_img_id,
+            key_img_encoded=self.hparams.modelparams.key_img_encoded,
             shuffle=True,
             transformation=tfm,
         )
 
         dataloader = torch.utils.data.DataLoader(
             dataset,
-            batch_size=self.hparams.batch_size,
-            num_workers=self.hparams.num_workers_per_loader,
+            batch_size=self.hparams.modelparams.batch_size,
+            num_workers=self.hparams.modelparams.num_workers_per_loader,
             pin_memory=True,
         )
         return dataloader
 
     def val_dataloader(self):
 
-        with open(self.hparams.after_val_label_mapping, "r") as f:
+        with open(self.hparams.modelparams.after_val_label_mapping, "r") as f:
             target_mapping = json.load(f)
 
         tfm = torchvision.transforms.Compose(
@@ -330,10 +330,10 @@ class resnetregressor(pl.LightningModule):
             ]
         )
         dataset = MsgPackIterableDatasetMultiTargetWithDynLabels(
-            path=self.hparams.msgpack_val_dir,
+            path=self.hparams.modelparams.msgpack_val_dir,
             target_mapping=target_mapping,
-            key_img_id=self.hparams.key_img_id,
-            key_img_encoded=self.hparams.key_img_encoded,
+            key_img_id=self.hparams.modelparams.key_img_id,
+            key_img_encoded=self.hparams.modelparams.key_img_encoded,
             shuffle=False,
             transformation=tfm,
             cache_size=1024,
@@ -341,8 +341,8 @@ class resnetregressor(pl.LightningModule):
 
         dataloader = torch.utils.data.DataLoader(
             dataset,
-            batch_size=self.hparams.batch_size,
-            num_workers=self.hparams.num_workers_per_loader,
+            batch_size=self.hparams.modelparams.batch_size,
+            num_workers=self.hparams.modelparams.num_workers_per_loader,
             pin_memory=True,
         )
 
@@ -373,20 +373,21 @@ def main():
     logging.info(f"Output directory: {out_dir}")
 
     # init 
-    model = resnetregressor(hparams=Namespace(**model_params))
+    model = resnetregressor(modelparams=Namespace(**model_params))
 
     checkpoint_dir = out_dir / "ckpts" / "{epoch:03d}-{val_loss:.4f}"
     checkpointer = pl.callbacks.model_checkpoint.ModelCheckpoint(checkpoint_dir)
 
-    progress_bar_refresh_rate = 0
+    progress_bar_refresh_rate = False
     if args.progbar:
-        progress_bar_refresh_rate = 1
+        progress_bar_refresh_rate = True
 
     trainer = pl.Trainer(
         **trainer_params,
+        devices="auto"
         val_check_interval=model_params["val_check_interval"],
-        checkpoint_callback=checkpointer,
-        progress_bar_refresh_rate=progress_bar_refresh_rate,
+        callback=checkpointer,
+        enable_progress_bar=progress_bar_refresh_rate,
     )
 
     trainer.fit(model)
