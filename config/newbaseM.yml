@@ -1,4 +1,4 @@
-out_dir: data/models/base_M/
+out_dir: data/models/base_Mwith4gpu/
 model_params:
   arch: resnet50 # model architecture from torchvision namespace
   weights: null # null -> all models are initialized with "ImageNet" weights or path to .ckpt to initialize from pre-trained model
@@ -39,7 +39,7 @@ model_params:
   num_workers_per_loader: 6
 # paramters for pytorch lightning trainer class
 trainer_params:
-  gpus: 6
+  gpus: 4
   max_epochs: 15
   distributed_backend: null
   precision: 16

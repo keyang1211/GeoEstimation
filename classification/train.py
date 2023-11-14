@@ -17,7 +17,7 @@ from classification.dataset import MsgPackIterableDatasetMultiTargetWithDynLabel
 class resnetregressor(pl.LightningModule):
     def __init__(self, hparams: Namespace):
         super().__init__()
-        self.hparams = hparams
+        self.save_hyperparameters()
         self.model, self.regressor = self.__build_model()
 
  
@@ -34,7 +34,7 @@ class resnetregressor(pl.LightningModule):
 
         if self.hparams.weights:
             logging.info("Load weights from pre-trained model")
-            model, classifier = utils_global.load_weights_if_available(
+            model, regressor = utils_global.load_weights_if_available(
                 model, regressor, self.hparams.weights
             )
 
@@ -44,6 +44,12 @@ class resnetregressor(pl.LightningModule):
         fv = self.model(x)
         yhats = self.regressor(fv)
         return yhats
+    
+    
+    def on_epoch_start(self):
+        # 在每个epoch开始时记录日志
+        epoch_num = self.current_epoch  # current_epoch是从0开始的，所以加1表示当前epoch数
+        logging.info(f"Starting epoch {epoch_num}")
 
     def training_step(self, batch, batch_idx, optimizer_idx=None):
         images, target = batch
@@ -352,7 +358,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO, filename="train.log")
 
     with open(args.config) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -366,10 +372,9 @@ def main():
     out_dir.mkdir(exist_ok=True, parents=True)
     logging.info(f"Output directory: {out_dir}")
 
-    # init classifier
+    # init 
     model = resnetregressor(hparams=Namespace(**model_params))
 
-    logger = pl.loggers.TensorBoardLogger(save_dir=str(out_dir), name="tb_logs")
     checkpoint_dir = out_dir / "ckpts" / "{epoch:03d}-{val_loss:.4f}"
     checkpointer = pl.callbacks.model_checkpoint.ModelCheckpoint(checkpoint_dir)
 
@@ -379,7 +384,6 @@ def main():
 
     trainer = pl.Trainer(
         **trainer_params,
-        logger=logger,
         val_check_interval=model_params["val_check_interval"],
         checkpoint_callback=checkpointer,
         progress_bar_refresh_rate=progress_bar_refresh_rate,
