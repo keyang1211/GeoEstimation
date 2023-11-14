@@ -376,7 +376,7 @@ def main():
     model = resnetregressor(modelparams=Namespace(**model_params))
 
     checkpoint_dir = out_dir / "ckpts" / "{epoch:03d}-{val_loss:.4f}"
-    checkpointer = pl.callbacks.model_checkpoint.ModelCheckpoint(checkpoint_dir)
+    checkpointer = pl.callbacks.ModelCheckpoint(checkpoint_dir)
 
     progress_bar_refresh_rate = False
     if args.progbar:
@@ -386,7 +386,7 @@ def main():
         **trainer_params,
         devices="auto"
         val_check_interval=model_params["val_check_interval"],
-        callback=checkpointer,
+        callbacks=[checkpointer],
         enable_progress_bar=progress_bar_refresh_rate,
     )
 
