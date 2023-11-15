@@ -41,5 +41,6 @@ model_params:
 trainer_params:
   max_epochs: 15
   precision: 16
+  num_nodes: 1
   reload_dataloaders_every_n_epochs: 1 # necessary to shuffle IterableDataset
 

@@ -428,7 +428,6 @@ def main():
         **trainer_params,
         accelerator="gpu",
         devices=-1,
-        num_nodes=2,
         val_check_interval=model_params["val_check_interval"],
         gradient_clip_val=1.0, #解决了梯度爆炸的问题
         callbacks=[checkpointer],
