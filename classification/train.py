@@ -66,31 +66,37 @@ class resnetregressor(pl.LightningModule):
             output[:, 1] * 180.0   # 映射到 -180 到 +180 范围
         ], dim=1)
 
-
+        # 检测 output 中是否存在 NaN 值
+        has_nan_output = torch.isnan(output).any().item()
+        if has_nan_output:
+            print("There is nan in trainoutput")
+        # 检测 output_scaled 中是否存在 NaN 值
+        has_nan_output_scaled = torch.isnan(output_scaled).any().item()
+        if has_nan_output_scaled:
+            print("There is nan in trainoutput_scaled")
         
-#         print("----------------------output shape---------------------")
-#         print(output_scaled.shape)
-#         print(output_scaled)
-#         print("------------------------------------------------------")
-#         print("----------------------target shape---------------------")
-#         print(target)
-#         print("------------------------------------------------------")
-        # individual losses per partitioning
         losses = [
             utils_global.vectorized_gc_distance(output_scaled[i][0],output_scaled[i][1], target[0][i],target[1][i])
             for i in range(output.shape[0])
         ]
-        errors = [loss.item() for loss in losses]
-        # print("----------------------train loss---------------------")
-        # print(errors)
-        # print("------------------------------------------------------")
         loss = sum(losses)
-        # self.log("train_loss", loss, prog_bar=True, logger=True)
-        return loss
+        errors = [loss.item() for loss in losses]
+        self.log("train_loss", loss)
+        output = {
+            "loss" : loss,
+            "losses" : errors}
+        return output
 
+    def on_train_batch_end(self,outputs, batch, batch_idx):
+        if batch_idx % 3999 == 0:
+            print("----------------train_batch_end_loss_every4000---------------")
+            print(outputs["losses"])
+            print("---------------------------------------------------")
+    
+    
     def validation_step(self, batch, batch_idx):
         images, target = batch #iamge是（batch size，2），target是两个张量的列表，一个是lat，一个是lon
-
+        
         if not isinstance(target, list) and len(target.shape) == 1:
             target = [target]
 
@@ -101,7 +107,18 @@ class resnetregressor(pl.LightningModule):
             output[:, 0] * 90.0,   # 映射到 -90 到 +90 范围
             output[:, 1] * 180.0   # 映射到 -180 到 +180 范围
         ], dim=1)
-       
+        
+        
+        
+        
+        
+        has_nan_output = torch.isnan(output).any().item()
+        if has_nan_output:
+            print("There is nan in valoutput")
+        # 检测 output_scaled 中是否存在 NaN 值
+        has_nan_output_scaled = torch.isnan(output_scaled).any().item()
+        if has_nan_output_scaled:
+            print("There is nan in valoutput_scaled")
 
         # loss calculation
         losses = [
@@ -114,9 +131,6 @@ class resnetregressor(pl.LightningModule):
         thissize = output.shape[0]
         # 计算误差统计
         errors = [loss.item() for loss in losses]
-        print("------------------------val loss----------------------")
-        print(errors)
-        print("------------------------------------------------------")
     # 统计不同误差范围内的样本数量
         num_samples = len(errors)
         error_100 = sum([1 for error in errors if error <= 100])
@@ -136,6 +150,7 @@ class resnetregressor(pl.LightningModule):
 
         output = {
             "val_loss": loss,
+            "errors" : errors,
             "avg_1loss":loss/thissize, 
             "size" : thissize,
             "ACC100" : error_100,
@@ -150,6 +165,24 @@ class resnetregressor(pl.LightningModule):
         self.validation_step_outputs.append(output)
         return output
     
+    
+    
+    
+    
+    def on_validation_batch_end(self,outputs, batch, batch_idx): 
+        if batch_idx % 100 == 0:
+            print("----------------val_batch_end_loss---------------")
+            print(outputs["errors"])
+            print("---------------------------------------------------")
+    
+        
+            
+           
+        
+        
+        
+        
+        
     
     def on_validation_epoch_end(self):
         epoch_num = self.current_epoch
@@ -353,6 +386,9 @@ class resnetregressor(pl.LightningModule):
             num_workers=self.hparams.modelparams.num_workers_per_loader,
             pin_memory=True,
         )
+        print("-------------traindataloader lenth---------------")
+        print(len(dataloader))
+        print("-------------------------------------------------")
         return dataloader
 
     def val_dataloader(self):
@@ -386,21 +422,24 @@ class resnetregressor(pl.LightningModule):
             num_workers=self.hparams.modelparams.num_workers_per_loader,
             pin_memory=True,
         )
+        print("-------------valdataloader lenth---------------")
+        print(len(dataloader))
+        print("-------------------------------------------------")
 
         return dataloader
 
 
 def parse_args():
     args = ArgumentParser()
-    args.add_argument("-c", "--config", type=Path, default=Path("config/baseM.yml"))
+    args.add_argument("-c", "--config", type=Path, default=Path("config/newbaseM.yml"))
     args.add_argument("--progbar", action="store_true")
     return args.parse_args()
 
 
 def main():
     args = parse_args()
-    logging.basicConfig(level=logging.INFO, filename="trainres.log")
-
+    logging.basicConfig(level=logging.INFO, filename="/work3/s212495/trainres.log")
+    logger = pl.loggers.CSVLogger(save_dir="/work3/s212495/csvlog", name="resnetlog")
     with open(args.config) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
@@ -417,8 +456,11 @@ def main():
     model = resnetregressor(modelparams=Namespace(**model_params))
 
     checkpoint_dir = out_dir / "ckpts" 
-    checkpointer = pl.callbacks.ModelCheckpoint(dirpath=checkpoint_dir,filename='{epoch}-{val_loss:.2f}',save_top_k = 5, monitor = 
-                                                'val_loss', mode = 'min')
+    checkpointer = pl.callbacks.ModelCheckpoint(dirpath=checkpoint_dir,
+                                                filename='{epoch}-{the_val_loss:.2f}',
+                                                save_top_k = 10,
+                                                monitor = 'the_val_loss', 
+                                                mode = 'min')
 
     progress_bar_refresh_rate = False
     if args.progbar:
@@ -426,10 +468,10 @@ def main():
 
     trainer = pl.Trainer(
         **trainer_params,
+        logger=logger,
         accelerator="gpu",
         devices=-1,
-        val_check_interval=model_params["val_check_interval"],
-        gradient_clip_val=1.0, #解决了梯度爆炸的问题
+        val_check_interval=model_params["val_check_interval"], 
         callbacks=[checkpointer],
         enable_progress_bar=progress_bar_refresh_rate,
     )
