@@ -44,23 +44,7 @@ def build_base_model(arch: str):
     return model, nfeatures
 
 
-def load_weights_if_available(
-    model: torch.nn.Module, classifier: torch.nn.Module, weights_path: Union[str, Path]
-):
 
-    checkpoint = torch.load(weights_path, map_location=lambda storage, loc: storage)
-
-    state_dict_features = OrderedDict()
-    state_dict_classifier = OrderedDict()
-    for k, w in checkpoint["state_dict"].items():
-        if k.startswith("model"):
-            state_dict_features[k.replace("model.", "")] = w
-        elif k.startswith("classifier"):
-            state_dict_classifier[k.replace("classifier.", "")] = w
-        else:
-            logging.warning(f"Unexpected prefix in state_dict: {k}")
-    model.load_state_dict(state_dict_features, strict=True)
-    return model, classifier
 
 
 def vectorized_gc_distance(latitudes, longitudes, latitudes_gt, longitudes_gt):

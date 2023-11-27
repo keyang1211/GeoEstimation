@@ -168,6 +168,108 @@ class MsgPackIterableDatasetMultiTargetWithDynLabels(torch.utils.data.IterableDa
 
     def __len__(self):
         return self.length
+    
+
+class TestsetIterableDataset(torch.utils.data.IterableDataset):
+    """
+    Data source: jpg files
+    Target values are generated on the fly given a mapping (id->[lat, lon])
+    """
+
+    def __init__(
+        self,
+        path: str, #files
+        target_mapping: Dict[str, list], #afterjson文件，key是imgid，value是lat lon的列表
+        transformation=None,
+        shuffle=True,
+        cache_size=128,
+    ):
+
+        super(TestsetIterableDataset, self).__init__()
+        self.path = path
+        self.cache_size = cache_size
+        self.transformation = transformation
+        self.shuffle = shuffle
+        self.seed = random.randint(1, 100)
+        self.target_mapping = target_mapping
+
+        for k, v in self.target_mapping.items():
+            if not isinstance(v, list):
+                self.target_mapping[k] = [v]
+        if len(self.target_mapping) == 0:
+            raise ValueError("No samples found.")
+
+        if not isinstance(self.path, (list, set)):
+            self.path = [self.path]
+
+    
+
+    
+        self.length = len(self.target_mapping)
+
+    def _process_sample(self, x):
+        # prepare image and target value
+
+        # decode and initial resize if necessary
+        img = Image.open(os.path.join(self.path, x["path"]))
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+
+        if img.width > 320 and img.height > 320:
+            img = torchvision.transforms.Resize(320)(img)
+
+        # apply all user specified image transformations
+        if self.transformation is not None:
+            img = self.transformation(img)
+
+        
+        return img, x["target"] #返回图片张量和经纬度的列表。。。。。。。也就是可迭代数据集迭代输出的每一项都是这样！！！！！
+        
+    def __iter__(self):
+        files = os.listdir(self.path)
+
+        # 筛选照片文件
+        photo_extensions = ['.jpg', '.jpeg', '.png']  # 可能的照片文件扩展名
+
+        photo_files = [file for file in files if os.path.splitext(file)[1].lower() in photo_extensions]
+
+        photo_files = [{"path":x} for x in photo_files]
+        
+        for x in photo_files:
+            
+            try:
+                # set target value dynamically 
+                x["target"] = self.target_mapping[x["path"]] # 是个列表，包含经纬度
+            except KeyError:
+                # reject sample
+                # print(f'reject {_id} {type(_id)}')
+                continue
+
+            if len(cache) < self.cache_size:
+                cache.append(x)
+
+            if len(cache) == self.cache_size:
+
+                if self.shuffle:
+                    random.shuffle(cache)
+                while cache:
+                    yield self._process_sample(cache.pop())
+                    
+                    
+        if self.shuffle:
+            random.shuffle(cache)
+
+        while cache:
+            yield self._process_sample(cache.pop())  
+                    
+
+    def __len__(self):
+        return self.length
+    
+    
+    
+    
+    
 
 
 class FiveCropImageDataset(torch.utils.data.Dataset):
