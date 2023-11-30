@@ -11,7 +11,7 @@ import pytorch_lightning as pl
 import pandas as pd
 
 from classification import utils_global
-from classification.dataset import MsgPackIterableDatasetMultiTargetWithDynLabels
+from classification.dataset import MsgPackIterableDatasetMultiTargetWithDynLabels,TestsetIterableDataset
 
 
 class resnetregressor(pl.LightningModule):
@@ -21,17 +21,18 @@ class resnetregressor(pl.LightningModule):
         self.model, self.regressor = self.__build_model()
         self.validation_step_outputs = []
         self.test_outputs = []
+        self.training_step_outputs = []
 
  
 
     def __build_model(self):
         logging.info("Build model")
-        model, nfeatures = utils_global.build_base_model(self.hparams.modelparams.arch)
-
+        ViT = torchvision.models.vit_b_16()
+        infeature = ViT.heads.head.in_features
+        new_model = torch.nn.Sequential(*list(ViT.children())[:-1])
+        
         regressor = torch.nn.Sequential(
-            torch.nn.Linear(nfeatures, 64),  # 64是你选择的隐藏层大小
-            torch.nn.ReLU(),
-            torch.nn.Linear(64, 2),
+            torch.nn.Linear(infeature, 2),  
             torch.nn.Tanh()# 输出两个数字（-1 - 1）
         )
 
@@ -76,10 +77,12 @@ class resnetregressor(pl.LightningModule):
         ]
         loss = sum(losses)
         errors = [loss.item() for loss in losses]
-        self.log("train_loss", loss)
+        thissize = output.shape[0]
         output = {
             "loss" : loss,
+            "size" : thissize,
             "losses" : errors}
+        self.training_step_outputs.append(output)
         return output
 
     def on_train_batch_end(self,outputs, batch, batch_idx):
@@ -88,6 +91,15 @@ class resnetregressor(pl.LightningModule):
             print(outputs["losses"])
             print("---------------------------------------------------")
     
+    def on_train_epoch_end(self):
+        
+        total_loss = sum([x["loss"].item() for x in self.training_step_outputs])
+        total_sample = sum([x["size"] for x in self.training_step_outputs])
+        epoch_mean = total_loss / total_sample
+        self.log("training_epoch_mean", epoch_mean)
+        # free up the memory
+        self.training_step_outputs.clear()
+
     
     def validation_step(self, batch, batch_idx):
         images, target = batch #iamge是（batch size，2），target是两个张量的列表，一个是lat，一个是lon
@@ -271,16 +283,12 @@ class resnetregressor(pl.LightningModule):
         
         self.test_outputs.clear()
         
-        logging.info("the_avg_distance: %s", avg_loss)
-        logging.info("totalnum: %s", total_num)
-        logging.info("numin100: %s", num_100)
-        logging.info("numin500: %s", num_500)
-        logging.info("numin1000: %s", num_1000)
-        logging.info("numin2000: %s", num_2000)
-        logging.info("100_accratio: %s", acc_100)
-        logging.info("500_accratio: %s", acc_500)
-        logging.info("1000_accratio: %s", acc_1000)
-        logging.info("2000_accratio: %s", acc_2000)
+        with open('/work3/s212495/test_results.txt', 'w') as file:
+            file.write(f"Avg Loss: {avg_loss}\n")
+            file.write(f"Accuracy in 100km: {acc_100}\n")
+            file.write(f"Accuracy in 500km: {acc_500}\n")
+            file.write(f"Accuracy in 1000km: {acc_1000}\n")
+            file.write(f"Accuracy in 2000km: {acc_2000}\n")
         
         
         
@@ -313,8 +321,9 @@ class resnetregressor(pl.LightningModule):
 
         tfm = torchvision.transforms.Compose(
             [
-                torchvision.transforms.RandomHorizontalFlip(),
-                torchvision.transforms.RandomResizedCrop(224, scale=(0.66, 1.0)),
+                torchvision.transforms.Resize(256),
+                torchvision.transforms.CenterCrop(224),
+                torchvision.transforms.AutoAugment(),
                 torchvision.transforms.ToTensor(),
                 torchvision.transforms.Normalize(
                     (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
@@ -395,14 +404,11 @@ class resnetregressor(pl.LightningModule):
                 ),
             ]
         )
-        dataset = MsgPackIterableDatasetMultiTargetWithDynLabels(
+        dataset = TestsetIterableDataset(
             path=self.hparams.modelparams.msgpack_test_dir,
             target_mapping=target_mapping,
-            key_img_id=self.hparams.modelparams.key_img_id,
-            key_img_encoded=self.hparams.modelparams.key_img_encoded,
             shuffle=False,
             transformation=tfm,
-            cache_size=1024,
         )
 
         dataloader = torch.utils.data.DataLoader(
@@ -411,7 +417,7 @@ class resnetregressor(pl.LightningModule):
             num_workers=self.hparams.modelparams.num_workers_per_loader,
             pin_memory=True,
         )
-        print("-------------valdataloader lenth---------------")
+        print("-------------testdataloader lenth---------------")
         print(len(dataloader))
         print("-------------------------------------------------")
 
@@ -424,15 +430,15 @@ class resnetregressor(pl.LightningModule):
 
 def parse_args():
     args = ArgumentParser()
-    args.add_argument("-c", "--config", type=Path, default=Path("config/newbaseM.yml"))
+    args.add_argument("-c", "--config", type=Path, default=Path("config/ViTconfig.yml"))
     args.add_argument("--progbar", action="store_true")
     return args.parse_args()
 
 
 def main():
     args = parse_args()
-    logging.basicConfig(level=logging.INFO, filename="/work3/s212495/trainres.log")
-    logger = pl.loggers.TensorBoardLogger(save_dir="/work3/s212495/tblog", name="resnetlog")
+    logging.basicConfig(level=logging.INFO, filename="/work3/s212495/trainViT.log")
+    logger = pl.loggers.CSVLogger(save_dir="/work3/s212495/ViTlog", name="ViTlog")
     with open(args.config) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 

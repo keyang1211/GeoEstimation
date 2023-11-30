@@ -1,4 +1,4 @@
-from classification import train
+from classification import train_resnet_nonlinear
 from argparse import Namespace, ArgumentParser
 from datetime import datetime
 import json
@@ -13,16 +13,31 @@ import pandas as pd
 
 from classification import utils_global
 
+def parse_args():
+    args = ArgumentParser()
+    args.add_argument("-c", "--config", type=Path, default=Path("config/newbasenonlinear.yml"))
+    args.add_argument("--progbar", action="store_true")
+    return args.parse_args()
+
+
 def main():
-    logging.basicConfig(level=logging.INFO, filename="/work3/s212495/2trainres.log")
-    logger = pl.loggers.TensorBoardLogger(save_dir="/work3/s212495/tblog", name="resnetlog")
-    out_dir = Path("/work3/s212495/data/models/base_Mwith4gpu/") / datetime.now().strftime("%y%m%d-%H%M")
+    args = parse_args()
+    logging.basicConfig(level=logging.INFO, filename="/work3/s212495/trainresnonlinear.log")
+    logger = pl.loggers.CSVLogger(save_dir="/work3/s212495/resnet_nonlinear", name="resnetlog")
+    with open(args.config) as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+
+    model_params = config["model_params"]
+    trainer_params = config["trainer_params"]
+
+    utils_global.check_is_valid_torchvision_architecture(model_params["arch"])
+
+    out_dir = Path(config["out_dir"]) / datetime.now().strftime("%y%m%d-%H%M")
     out_dir.mkdir(exist_ok=True, parents=True)
     logging.info(f"Output directory: {out_dir}")
 
     # init 
-    model = train.resnetregressor.load_from_checkpoint(
-        checkpoint_path = "/work3/s212495/data/models/base_Mwith4gpu/231120-2349/ckpts/epoch=14-the_val_loss=4003.64.ckpt")
+    model = train_resnet_nonlinear.resnetregressor.load_from_checkpoint()
 
     checkpoint_dir = out_dir / "ckpts" 
     checkpointer = pl.callbacks.ModelCheckpoint(dirpath=checkpoint_dir,
@@ -31,26 +46,22 @@ def main():
                                                 monitor = 'the_val_loss', 
                                                 mode = 'min')
 
-
+    progress_bar_refresh_rate = False
+    if args.progbar:
+        progress_bar_refresh_rate = True
 
     trainer = pl.Trainer(
-        max_epochs=100,
-        precision=16,
-        num_nodes=1,
-        gradient_clip_val=0.8,
-        reload_dataloaders_every_n_epochs=1,
+        **trainer_params,
         logger=logger,
         accelerator="gpu",
         devices=-1,
-        val_check_interval=4000, 
+        val_check_interval=model_params["val_check_interval"], 
         callbacks=[checkpointer],
-        enable_progress_bar = False
+        enable_progress_bar=progress_bar_refresh_rate,
     )
-    
-    trainer.fit(model, 
-                ckpt_path="/work3/s212495/data/models/base_Mwith4gpu/231120-2349/ckpts/epoch=14-the_val_loss=4003.64.ckpt")
 
-    
+    trainer.fit(model,ckpt_path="some/path/to/my_checkpoint.ckpt")
+
+
 if __name__ == "__main__":
     main()
-
