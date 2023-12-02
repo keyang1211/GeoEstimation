@@ -32,12 +32,12 @@ model_params:
   after_test_label_mapping: resources/after_im2gps3k_places365_mapping_h3.json
   key_img_id: id # image id name for msgpack dataset
   key_img_encoded: image # image data name for msgpack dataset
-  num_workers_per_loader: 4
+  num_workers_per_loader: 12
 # paramters for pytorch lightning trainer class
 trainer_params:
   max_epochs: 100
   min_epochs: 10
-  precision: 16
+  precision: 16-mixed
   num_nodes: 1
   gradient_clip_val: 0.8 
   reload_dataloaders_every_n_epochs: 1 

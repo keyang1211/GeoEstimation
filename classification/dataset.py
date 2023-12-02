@@ -66,6 +66,7 @@ class MsgPackIterableDatasetMultiTargetWithDynLabels(torch.utils.data.IterableDa
                 for x in os.listdir(p)
                 if re.match(shards_re, x)
             ]
+            # 在这里修改shards_index列表，就可以控制数据数量的百分比
             shards.extend(
                 [
                     {

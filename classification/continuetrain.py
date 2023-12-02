@@ -37,12 +37,13 @@ def main():
     logging.info(f"Output directory: {out_dir}")
 
     # init 
-    model = train_resnet_nonlinear.resnetregressor.load_from_checkpoint()
+    model = train_resnet_nonlinear.resnetregressor(modelparams=Namespace(**model_params))
 
     checkpoint_dir = out_dir / "ckpts" 
     checkpointer = pl.callbacks.ModelCheckpoint(dirpath=checkpoint_dir,
                                                 filename='{epoch}-{the_val_loss:.2f}',
                                                 save_top_k = 10,
+                                                save_last = True,
                                                 monitor = 'the_val_loss', 
                                                 mode = 'min')
 
@@ -60,7 +61,7 @@ def main():
         enable_progress_bar=progress_bar_refresh_rate,
     )
 
-    trainer.fit(model,ckpt_path="some/path/to/my_checkpoint.ckpt")
+    trainer.fit(model,ckpt_path="last")
 
 
 if __name__ == "__main__":

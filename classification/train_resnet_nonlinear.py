@@ -82,6 +82,7 @@ class resnetregressor(pl.LightningModule):
             "loss" : loss,
             "size" : thissize,
             "losses" : errors}
+        self.log("train_loss_batch", loss)
         self.training_step_outputs.append(output)
         return output
 
@@ -458,7 +459,8 @@ def main():
     checkpoint_dir = out_dir / "ckpts" 
     checkpointer = pl.callbacks.ModelCheckpoint(dirpath=checkpoint_dir,
                                                 filename='{epoch}-{the_val_loss:.2f}',
-                                                save_top_k = 10,
+                                                save_top_k = 5,
+                                                save_last = True,
                                                 monitor = 'the_val_loss', 
                                                 mode = 'min')
 

@@ -23,7 +23,7 @@ def check_is_valid_torchvision_architecture(architecture: str):
 
 def build_base_model(arch: str):
 
-    model = torchvision.models.__dict__[arch](pretrained=True)
+    model = torchvision.models.__dict__[arch]()
 
     # get input dimension before classification layer
     if arch in ["mobilenet_v2"]:

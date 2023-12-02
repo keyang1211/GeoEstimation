@@ -9,13 +9,14 @@ import torch
 import torchvision
 import pytorch_lightning as pl
 import pandas as pd
+from lightning.pytorch.tuner import Tuner
 
 from classification import utils_global
 from classification.dataset import MsgPackIterableDatasetMultiTargetWithDynLabels,TestsetIterableDataset
 
 
 class resnetregressor(pl.LightningModule):
-    def __init__(self, modelparams: Namespace):
+    def __init__(self, modelparams: Namespace,lr,momentum,weight_decay):
         super().__init__()
         self.save_hyperparameters()
         self.model, self.regressor = self.__build_model()
@@ -30,7 +31,9 @@ class resnetregressor(pl.LightningModule):
         model, nfeatures = utils_global.build_base_model(self.hparams.modelparams.arch)
 
         regressor = torch.nn.Sequential(
-            torch.nn.Linear(nfeatures, 2),  
+            torch.nn.Linear(nfeatures, 128),  
+            torch.nn.ReLU(),  
+            torch.nn.Linear(128, 2),
             torch.nn.Tanh()# 输出两个数字（-1 - 1）
         )
 
@@ -295,7 +298,7 @@ class resnetregressor(pl.LightningModule):
     def configure_optimizers(self):
 
         optim_feature_extrator = torch.optim.SGD(
-            self.parameters(), **self.hparams.modelparams.optim["params"]
+            self.parameters(), self.hparams.lr,self.hparams.momentum,self.hparams.weight_decay
         )
         Ascheduler = torch.optim.lr_scheduler.MultiStepLR(
             optim_feature_extrator, **self.hparams.modelparams.scheduler["params"]
@@ -320,6 +323,7 @@ class resnetregressor(pl.LightningModule):
 
         tfm = torchvision.transforms.Compose(
             [
+                
                 torchvision.transforms.Resize(256),
                 torchvision.transforms.CenterCrop(224),
                 torchvision.transforms.AutoAugment(),
@@ -429,15 +433,15 @@ class resnetregressor(pl.LightningModule):
 
 def parse_args():
     args = ArgumentParser()
-    args.add_argument("-c", "--config", type=Path, default=Path("config/newbaseM.yml"))
+    args.add_argument("-c", "--config", type=Path, default=Path("config/newbasenonlinear.yml"))
     args.add_argument("--progbar", action="store_true")
     return args.parse_args()
 
 
 def main():
     args = parse_args()
-    logging.basicConfig(level=logging.INFO, filename="/work3/s212495/trainreslinear.log")
-    logger = pl.loggers.CSVLogger(save_dir="/work3/s212495/resnetlinear", name="resnetlog")
+    logging.basicConfig(level=logging.INFO, filename="/work3/s212495/trainresnonlinear.log")
+    logger = pl.loggers.CSVLogger(save_dir="/work3/s212495/resnet_nonlinear", name="resnetlog")
     with open(args.config) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
@@ -451,7 +455,7 @@ def main():
     logging.info(f"Output directory: {out_dir}")
 
     # init 
-    model = resnetregressor(modelparams=Namespace(**model_params))
+    model = resnetregressor(modelparams=Namespace(**model_params),lr = 0.1,momentum=0.8,weight_decay=0.0001)
 
     checkpoint_dir = out_dir / "ckpts" 
     checkpointer = pl.callbacks.ModelCheckpoint(dirpath=checkpoint_dir,
@@ -475,8 +479,12 @@ def main():
         enable_progress_bar=progress_bar_refresh_rate,
     )
 
-    trainer.fit(model)
+    # Create a Tuner
+    tuner = Tuner(trainer)
 
+    # finds learning rate automatically
+    # sets hparams.lr or hparams.learning_rate to that learning rate
+    tuner.lr_find(model)
 
 if __name__ == "__main__":
     main()

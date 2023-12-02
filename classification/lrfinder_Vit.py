@@ -9,13 +9,13 @@ import torch
 import torchvision
 import pytorch_lightning as pl
 import pandas as pd
-
-from classification import utils_global
+from lightning.pytorch.tuner import Tuner
+from classification import utils_global,ViTencoder
 from classification.dataset import MsgPackIterableDatasetMultiTargetWithDynLabels,TestsetIterableDataset
 
 
 class resnetregressor(pl.LightningModule):
-    def __init__(self, modelparams: Namespace):
+    def __init__(self, modelparams: Namespace,lr=0.01,momentum=0.8,weight_decay=0.0001):
         super().__init__()
         self.save_hyperparameters()
         self.model, self.regressor = self.__build_model()
@@ -27,14 +27,21 @@ class resnetregressor(pl.LightningModule):
 
     def __build_model(self):
         logging.info("Build model")
-        model, nfeatures = utils_global.build_base_model(self.hparams.modelparams.arch)
-
+        new_model = ViTencoder.VisionTransformer(
+            image_size=224,
+            patch_size=16,
+            num_layers=12,
+            num_heads=12,
+            hidden_dim=768,
+            mlp_dim=3072
+        )
+        
         regressor = torch.nn.Sequential(
-            torch.nn.Linear(nfeatures, 2),  
+            torch.nn.Linear(768, 2),  
             torch.nn.Tanh()# 输出两个数字（-1 - 1）
         )
 
-        return model, regressor
+        return new_model, regressor
 
     def forward(self, x):
         fv = self.model(x)
@@ -295,7 +302,7 @@ class resnetregressor(pl.LightningModule):
     def configure_optimizers(self):
 
         optim_feature_extrator = torch.optim.SGD(
-            self.parameters(), **self.hparams.modelparams.optim["params"]
+            self.parameters(), self.hparams.lr,self.hparams.momentum,self.hparams.weight_decay
         )
         Ascheduler = torch.optim.lr_scheduler.MultiStepLR(
             optim_feature_extrator, **self.hparams.modelparams.scheduler["params"]
@@ -429,22 +436,21 @@ class resnetregressor(pl.LightningModule):
 
 def parse_args():
     args = ArgumentParser()
-    args.add_argument("-c", "--config", type=Path, default=Path("config/newbaseM.yml"))
+    args.add_argument("-c", "--config", type=Path, default=Path("config/ViTconfig.yml"))
     args.add_argument("--progbar", action="store_true")
     return args.parse_args()
 
 
 def main():
     args = parse_args()
-    logging.basicConfig(level=logging.INFO, filename="/work3/s212495/trainreslinear.log")
-    logger = pl.loggers.CSVLogger(save_dir="/work3/s212495/resnetlinear", name="resnetlog")
+    logging.basicConfig(level=logging.INFO, filename="/work3/s212495/trainViT.log")
+    logger = pl.loggers.CSVLogger(save_dir="/work3/s212495/ViTlog", name="ViTlog")
     with open(args.config) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
     model_params = config["model_params"]
     trainer_params = config["trainer_params"]
 
-    utils_global.check_is_valid_torchvision_architecture(model_params["arch"])
 
     out_dir = Path(config["out_dir"]) / datetime.now().strftime("%y%m%d-%H%M")
     out_dir.mkdir(exist_ok=True, parents=True)
@@ -456,7 +462,7 @@ def main():
     checkpoint_dir = out_dir / "ckpts" 
     checkpointer = pl.callbacks.ModelCheckpoint(dirpath=checkpoint_dir,
                                                 filename='{epoch}-{the_val_loss:.2f}',
-                                                save_top_k = 10,
+                                                save_top_k = 5,
                                                 save_last = True,
                                                 monitor = 'the_val_loss', 
                                                 mode = 'min')
@@ -475,8 +481,12 @@ def main():
         enable_progress_bar=progress_bar_refresh_rate,
     )
 
-    trainer.fit(model)
+    # Create a Tuner
+    tuner = Tuner(trainer)
 
+    # finds learning rate automatically
+    # sets hparams.lr or hparams.learning_rate to that learning rate
+    tuner.lr_find(model)
 
 if __name__ == "__main__":
     main()

@@ -9,8 +9,7 @@ import torch
 import torchvision
 import pytorch_lightning as pl
 import pandas as pd
-
-from classification import utils_global
+from classification import utils_global,ViTencoder
 from classification.dataset import MsgPackIterableDatasetMultiTargetWithDynLabels,TestsetIterableDataset
 
 
@@ -27,16 +26,22 @@ class resnetregressor(pl.LightningModule):
 
     def __build_model(self):
         logging.info("Build model")
-        ViT = torchvision.models.vit_b_16()
-        infeature = ViT.heads.head.in_features
-        new_model = torch.nn.Sequential(*list(ViT.children())[:-1])
+        new_model = ViTencoder.VisionTransformer(
+            image_size=224,
+            patch_size=16,
+            num_layers=12,
+            num_heads=12,
+            hidden_dim=768,
+            mlp_dim=3072
+        )
         
         regressor = torch.nn.Sequential(
-            torch.nn.Linear(infeature, 2),  
+            torch.nn.Linear(768, 2),  
             torch.nn.Tanh()# 输出两个数字（-1 - 1）
         )
 
-        return model, regressor
+        return new_model, regressor
+
 
     def forward(self, x):
         fv = self.model(x)
@@ -82,6 +87,7 @@ class resnetregressor(pl.LightningModule):
             "loss" : loss,
             "size" : thissize,
             "losses" : errors}
+        self.log("train_loss_batch", loss)
         self.training_step_outputs.append(output)
         return output
 
@@ -445,7 +451,6 @@ def main():
     model_params = config["model_params"]
     trainer_params = config["trainer_params"]
 
-    utils_global.check_is_valid_torchvision_architecture(model_params["arch"])
 
     out_dir = Path(config["out_dir"]) / datetime.now().strftime("%y%m%d-%H%M")
     out_dir.mkdir(exist_ok=True, parents=True)
@@ -457,7 +462,8 @@ def main():
     checkpoint_dir = out_dir / "ckpts" 
     checkpointer = pl.callbacks.ModelCheckpoint(dirpath=checkpoint_dir,
                                                 filename='{epoch}-{the_val_loss:.2f}',
-                                                save_top_k = 10,
+                                                save_top_k = 5,
+                                                save_last = True,
                                                 monitor = 'the_val_loss', 
                                                 mode = 'min')
 
