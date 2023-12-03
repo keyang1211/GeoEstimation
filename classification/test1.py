@@ -30,7 +30,9 @@ class resnetregressor(pl.LightningModule):
         model, nfeatures = utils_global.build_base_model(self.hparams.modelparams.arch)
 
         regressor = torch.nn.Sequential(
-            torch.nn.Linear(nfeatures, 2),  
+            torch.nn.Linear(nfeatures, 128),  
+            torch.nn.ReLU(),  
+            torch.nn.Linear(128, 2),
             torch.nn.Tanh()# 输出两个数字（-1 - 1）
         )
 
@@ -71,11 +73,11 @@ class resnetregressor(pl.LightningModule):
         
         losses = [
             utils_global.vectorized_gc_distance(output_scaled[i][0],output_scaled[i][1], target[0][i],target[1][i])
-            for i in range(output.shape[0])
+            for i in range(output_scaled.shape[0])
         ]
         loss = sum(losses)
-        errors = [loss.item() for loss in losses]
-        thissize = output.shape[0]
+        errors = [oneloss.item() for oneloss in losses]
+        thissize = output_scaled.shape[0]
         output = {
             "loss" : loss,
             "size" : thissize,
@@ -91,7 +93,6 @@ class resnetregressor(pl.LightningModule):
             print("---------------------------------------------------")
     
     def on_train_epoch_end(self):
-        
         total_loss = sum([x["loss"].item() for x in self.training_step_outputs])
         total_sample = sum([x["size"] for x in self.training_step_outputs])
         epoch_mean = total_loss / total_sample
@@ -320,6 +321,7 @@ class resnetregressor(pl.LightningModule):
 
         tfm = torchvision.transforms.Compose(
             [
+                
                 torchvision.transforms.Resize(256),
                 torchvision.transforms.CenterCrop(224),
                 torchvision.transforms.AutoAugment(),
@@ -429,15 +431,15 @@ class resnetregressor(pl.LightningModule):
 
 def parse_args():
     args = ArgumentParser()
-    args.add_argument("-c", "--config", type=Path, default=Path("config/newbaseM.yml"))
+    args.add_argument("-c", "--config", type=Path, default=Path("config/resnet50.yml"))
     args.add_argument("--progbar", action="store_true")
     return args.parse_args()
 
 
 def main():
     args = parse_args()
-    logging.basicConfig(level=logging.INFO, filename="/work3/s212495/trainreslinear.log")
-    logger = pl.loggers.CSVLogger(save_dir="/work3/s212495/resnetlinear", name="resnetlog")
+    logging.basicConfig(level=logging.INFO, filename="/work3/s212495/trainres50.log")
+    logger = pl.loggers.CSVLogger(save_dir="/work3/s212495/resnet_50", name="resnetlog")
     with open(args.config) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
@@ -456,7 +458,7 @@ def main():
     checkpoint_dir = out_dir / "ckpts" 
     checkpointer = pl.callbacks.ModelCheckpoint(dirpath=checkpoint_dir,
                                                 filename='{epoch}-{the_val_loss:.2f}',
-                                                save_top_k = 10,
+                                                save_top_k = 5,
                                                 save_last = True,
                                                 monitor = 'the_val_loss', 
                                                 mode = 'min')

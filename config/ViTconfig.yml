@@ -7,7 +7,7 @@ model_params:
   optim:
     # SGD
     params:
-      lr: 0.01
+      lr: 0.0010964781961431851
       momentum: 0.8
       weight_decay: 0.0001
   scheduler:

@@ -73,11 +73,23 @@ class resnetregressor(pl.LightningModule):
         
         losses = [
             utils_global.vectorized_gc_distance(output_scaled[i][0],output_scaled[i][1], target[0][i],target[1][i])
-            for i in range(output.shape[0])
+            for i in range(output_scaled.shape[0])
         ]
+        
+        # 检查nan值
+        has_nan = any([torch.isnan(loss1).any() for loss1 in losses])
+        if has_nan:
+            print("There is NaN in list losses")
+       
         loss = sum(losses)
-        errors = [loss.item() for loss in losses]
-        thissize = output.shape[0]
+        
+        has_nan = torch.isnan(loss)
+        if has_nan:
+            print("There is NaN in total loss")
+            
+            
+        errors = [oneloss.item() for oneloss in losses]
+        thissize = output_scaled.shape[0]
         output = {
             "loss" : loss,
             "size" : thissize,
@@ -86,17 +98,21 @@ class resnetregressor(pl.LightningModule):
         self.training_step_outputs.append(output)
         return output
 
-    def on_train_batch_end(self,outputs, batch, batch_idx):
-        if batch_idx % 3999 == 0:
-            print("----------------train_batch_end_loss_every4000---------------")
-            print(outputs["losses"])
-            print("---------------------------------------------------")
+#     def on_train_batch_end(self,outputs, batch, batch_idx):
+#         if batch_idx % 3999 == 0:
+#             print("----------------train_batch_end_loss_every4000---------------")
+#             print(outputs["losses"])
+#             print("---------------------------------------------------")
     
+
     def on_train_epoch_end(self):
         
         total_loss = sum([x["loss"].item() for x in self.training_step_outputs])
+        print(f"Epoch {self.current_epoch}: Total Loss: {total_loss}")
         total_sample = sum([x["size"] for x in self.training_step_outputs])
+        print(f"Epoch {self.current_epoch}: Total Sample: {total_sample}")
         epoch_mean = total_loss / total_sample
+        print(f"Epoch {self.current_epoch}: Epoch Mean: {epoch_mean}")
         self.log("training_epoch_mean", epoch_mean)
         # free up the memory
         self.training_step_outputs.clear()
@@ -177,11 +193,11 @@ class resnetregressor(pl.LightningModule):
     
     
     
-    def on_validation_batch_end(self,outputs, batch, batch_idx): 
-        if batch_idx % 100 == 0:
-            print("----------------val_batch_end_loss---------------")
-            print(outputs["errors"])
-            print("---------------------------------------------------")
+#     def on_validation_batch_end(self,outputs, batch, batch_idx): 
+#         if batch_idx % 100 == 0:
+#             print("----------------val_batch_end_loss---------------")
+#             print(outputs["errors"])
+#             print("---------------------------------------------------")
     
         
             
